@@ -1,42 +1,39 @@
 /**************************************************************************
-    Souliss - RGB LED Strip
+    Souliss - RGB LED Strip control from an ESP8266
     
-    Control an RGB LED or a Strip using the RGB Shield and Ethernet Shield from
-    Open Electronics, control bright and color from an Android smartphone and
-    additionaly with an hardware switch.
- 
-    It include fade in and out effect
- 
-    Run this code on one of the following boards:
-      - Arduino Ethernet (W5100) 
-      - Arduino with Ethernet Shield (W5100)
-      
-    As option you can run the same code on the following, just changing the
-    relevant configuration file at begin of the sketch
-      - Arduino with ENC28J60 Ethernet Shield
-      - Arduino with W5200 Ethernet Shield
-      - Arduino with W5500 Ethernet Shield      
+    This is a RGB LED Strip Driver/Controller driven by the Souliss Framework.  
     
+    Load this code on ESP8266 board using the porting of the Arduino core
+    for this platform.
+	
+	The 3 output control 3 IRLZ44N Mosfet.
+	In the actual configuration the channel are configured in this way:
+	Red   channel = GPIO14
+	Green channel = GPIO4
+	Blue  channel = GPIO5
+	
+	Code is not yet optimised for any energy saving and will always be active.
+	DHCP is used to get the IP address. Use serial output (76800) to get the actual IP adress.
+        
 ***************************************************************************/
 
 // Configure the framework
-#include "bconf/StandardArduino.h"          // Use a standard Arduino
-#include "conf/ethW5100.h"                  // Ethernet through Wiznet W5100
-#include "conf/Gateway.h"                   // The main node is the Gateway
+#include "bconf/MCU_ESP8266.h"              // Load the code directly on the ESP8266
+#include "conf/Gateway.h"                   // The main node is the Gateway, we have just one node
+#include "conf/IPBroadcast.h"
+
+// **** Define the WiFi name and password ****
+#define WIFICONF_INSKETCH
+#define WiFi_SSID               "YourWifiName"
+#define WiFi_Password           "YourWifiPassword"    
 
 // Include framework code and libraries
-#include <SPI.h>
+#include <ESP8266WiFi.h>
+#include <EEPROM.h>
 #include "Souliss.h"
 
-// Define the network configuration according to your router settings
-uint8_t ip_address[4]  = {192, 168, 0, 120};
-uint8_t subnet_mask[4] = {255, 255, 255, 0};
-uint8_t ip_gateway[4]  = {192, 168, 0, 1};
-#define Gateway_address 77
-#define Peer_address    78
-#define myvNet_address  ip_address[3]       // The last byte of the IP address (77) is also the vNet address
-#define myvNet_subnet   0xFF00
-#define myvNet_supern   Gateway_address
+// **** Define here the right pin for your ESP module **** 
+#define	OUTPUTPIN			BUILTIN_LED
 
 #define LEDCONTROL          0               // This is the memory slot for the logic that handle the light
 #define LEDRED              1               // This is the memory slot for the logic that handle the light
@@ -44,103 +41,83 @@ uint8_t ip_gateway[4]  = {192, 168, 0, 1};
 #define LEDBLUE             3               // This is the memory slot for the logic that handle the light
 
 
-#define LEDCONTROL2          4               // This is the memory slot for the logic that handle the light
-#define LEDRED2              5               // This is the memory slot for the logic that handle the light
-#define LEDGREEN2            6               // This is the memory slot for the logic that handle the light
-#define LEDBLUE2             7               // This is the memory slot for the logic that handle the light
-
 void setup()
 {   
+    delay(10);
+    Serial.begin(76800);
+    delay(20);
+    Serial.println("Going to initialize");
     Initialize();
-    
-    // Set network parameters
-    Souliss_SetIPAddress(ip_address, subnet_mask, ip_gateway);
-    SetAsGateway(myvNet_address);                                   // Set this node as gateway for SoulissApp  
-            
-    // Set the typical logic to use, T16 is a ON/OFF Digital Output with Timer Option
-    Set_T16(LEDCONTROL);
-    Set_T16(LEDCONTROL2);
-    
-    // Define inputs, outputs pins
-    pinMode(2, INPUT);                  // Hardware pulldown required
-    pinMode(3, OUTPUT);                 // Power the LED
-    pinMode(5, OUTPUT);                 // Power the LED
-    pinMode(6, OUTPUT);
-    pinMode(11, OUTPUT);
-    pinMode(12, OUTPUT);
-    pinMode(13, OUTPUT);                 // Power the LED    
-}
+    Serial.println("Initialisation finished");
 
+	// Connect to the WiFi network and get an address from DHCP
+    GetIPAddress();  
+	//Uncomment the next line to define a fixed IP address (consult Soulis documentation for more info)	
+ // SetIPAddress(ip_address, subnet_mask, ip_gateway);                           
+    SetAsGateway(myvNet_dhcp);       // Set this node as gateway for SoulissApp  
+    Serial.println("Received IP address: ");
+    Serial.println(WiFi.localIP());
+	// This is the vNet address for this node, used to communicate with other
+	// nodes in your Souliss network
+    SetAddress(0xAB01, 0xFF00, 0x0000);
+    SetAsPeerNode(0xAB02, 1);
+    Serial.println("Node set as peer");
+    
+    Set_T16(LEDCONTROL);
+	
+    
+	// Define outputs pins
+    
+    pinMode(14, OUTPUT);                // Blue LED output
+    pinMode(4, OUTPUT);                 // Green LED output
+    pinMode(5, OUTPUT);					// Red LED output
+}
+// Following variable are used to save souliss set LED value. Souliss use 8 bit PWM output (0-255),
+// whereas ESP8266 have 10 bit PWM output (0-1023). The variable are used to make the conversion.
+int ledBlue = 0;
+int ledGreen = 0;
+int ledRed = 0;
 void loop()
 { 
     // Here we start to play
     EXECUTEFAST() {                     
         UPDATEFAST();   
-
-        // Read every 10ms the input state and send it to the other board   
-        FAST_10ms() {
-            
-            // Use Pin2 as ON/OFF command, use a pulldown resistor (10 k) connected between 
-            // Pin2 and GND. Pressing for more than 1,5 seconds will set the GoodNight mode
-            // and the light will be progressly be turned off.
-            // It get the digital input state and store it in the LEDCONTROL logic
-            DigInHold(2, Souliss_T1n_ToggleCmd, 0x255, LEDCONTROL);     
-            
-            // Use in inputs stored in the LEDCONTROL to control the RGB LED or Strip,
-            // it provide automatically fade in and out effect and color change.
+        
+        FAST_10ms() {   // We process the logic and relevant input and output every 10 milliseconds
             Logic_T16(LEDCONTROL);
-            Logic_T16(LEDCONTROL2);
-
-            // Use the output from the logic to control the colors via PWM in pins 3, 5 and 6
-            //
-            // If using a LED Strip wire as
-            //  Strip Pin           RGB Shield Pin
-            //  +                   R+ or G+ or B+
-            //  R                   R-
-            //  G                   G-
-            //  B                   B-
-            //
-            // If using an RGB LED wire as
-            //  LED Pin             RGB Shield Pin
-            //  +                   R+ or G+ or B+
-            //  R                   R- with resistor
-            //  G                   G- with resistor
-            //  B                   B- with resistor
-            //          
-            // If using separated LEDs for each color
-            //  Strip Pin           RGB Shield Pin
-            //  + (Red)             R+ with resistor
-            //  + (Green)           G+ with resistor
-            //  + (Blue)            B+ with resistor
-            //  - (Red)             R-
-            //  - (Green)           G-
-            //  - (Blue)            B-
-            //          
-            analogWrite(6, mOutput(LEDRED));
-            analogWrite(3, mOutput(LEDGREEN));
-            analogWrite(5, mOutput(LEDBLUE));
-
-            
-            analogWrite(13, mOutput(LEDRED2));
-            analogWrite(12, mOutput(LEDGREEN2));
-            analogWrite(11, mOutput(LEDBLUE2));
-            //11 blue
-            //12 green
-            //13 red
-
-            // Automatically handle the communication
+            ledBlue = mOutput(LEDBLUE);
+            ledGreen = mOutput(LEDGREEN);
+            ledRed = mOutput(LEDRED);
+            if (ledBlue != 0) {
+              analogWrite(14, (ledBlue+1)*4); 
+            } else {
+              analogWrite(14, 0); 
+            }
+            if (ledGreen != 0) {
+              analogWrite(4, (ledGreen+1)*4); 
+            } else {
+              analogWrite(4, 0); 
+            }
+            if (ledRed != 0) {
+              analogWrite(5, (ledRed+1)*4); 
+            } else {
+              analogWrite(5, 0); 
+            }
             ProcessCommunication();
-        }           
+        } 
+
+        // Here we handle here the communication with Android
+        FAST_GatewayComms();                                        
     }
-    
     EXECUTESLOW() { 
         UPDATESLOW();
 
         SLOW_10s() {                
             // Timer associated to the LED logic control
-            Timer_T16(LEDCONTROL);      
-            Timer_T16(LEDCONTROL2);                  
+            Timer_T16(LEDCONTROL); 
+			// Test phase output to ensure device is running
+			Serial.println("Device is still running ");			
         }     
-        
-    }   
+
+    } 
 } 
