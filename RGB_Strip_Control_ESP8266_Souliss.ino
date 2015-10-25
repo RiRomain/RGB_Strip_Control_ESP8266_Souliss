@@ -68,9 +68,9 @@ void setup()
     
 	// Define outputs pins
     
-    pinMode(14, OUTPUT);                // Blue LED output
-    pinMode(4, OUTPUT);                 // Green LED output
-    pinMode(5, OUTPUT);					// Red LED output
+    pinMode(4, OUTPUT);                 // Blue LED output
+    pinMode(5, OUTPUT);                 // Green LED output
+    pinMode(14, OUTPUT);                // Red LED output
 }
 // Following variable are used to save souliss set LED value. Souliss use 8 bit PWM output (0-255),
 // whereas ESP8266 have 10 bit PWM output (0-1023). The variable are used to make the conversion.
@@ -89,19 +89,19 @@ void loop()
             ledGreen = mOutput(LEDGREEN);
             ledRed = mOutput(LEDRED);
             if (ledBlue != 0) {
-              analogWrite(14, (ledBlue+1)*4); 
-            } else {
-              analogWrite(14, 0); 
-            }
-            if (ledGreen != 0) {
-              analogWrite(4, (ledGreen+1)*4); 
+              analogWrite(4, (ledBlue+1)*4); 
             } else {
               analogWrite(4, 0); 
             }
-            if (ledRed != 0) {
-              analogWrite(5, (ledRed+1)*4); 
+            if (ledGreen != 0) {
+              analogWrite(5, (ledGreen+1)*4); 
             } else {
               analogWrite(5, 0); 
+            }
+            if (ledRed != 0) {
+              analogWrite(14, (ledRed+1)*4); 
+            } else {
+              analogWrite(14, 0); 
             }
             ProcessCommunication();
         } 
