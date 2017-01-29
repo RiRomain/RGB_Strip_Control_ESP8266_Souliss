@@ -17,10 +17,16 @@
         
 ***************************************************************************/
 
+// Let the IDE point to the Souliss framework
+#include "SoulissFramework.h"
+
 // Configure the framework
 #include "bconf/MCU_ESP8266.h"              // Load the code directly on the ESP8266
 #include "conf/Gateway.h"                   // The main node is the Gateway, we have just one node
-#include "conf/IPBroadcast.h"
+
+// Include framework code and libraries
+#include <ESP8266WiFi.h>
+#include "Souliss.h"
 
 // **** Define the WiFi name and password ****
 #define WIFICONF_INSKETCH
